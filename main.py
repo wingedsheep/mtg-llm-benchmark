@@ -5,7 +5,7 @@ MTG Agent Benchmark - Main Entry Point
 This script orchestrates the complete MTG agent benchmark workflow.
 """
 
-from benchmark_runner import BenchmarkRunner
+from benchmark.benchmark_runner import BenchmarkRunner
 
 
 def main():
