@@ -196,23 +196,11 @@ def run_debug_game():
     """Run a game with maximum debugging output"""
     print("Running debug game with full logging:")
     return run_enhanced_game(
-        max_turns=8,
+        max_turns=15,
         show_details=True,
         show_logger=True,  # Show real-time logger output
         delay=0.8  # Slower for debugging
     )
-
-
-def run_quick_game():
-    """Run a quick game with minimal output"""
-    print("Running quick game:")
-    return run_enhanced_game(
-        max_turns=15,
-        show_details=False,
-        show_logger=False,
-        delay=0.1
-    )
-
 
 if __name__ == "__main__":
     # Run a debug game with full logging

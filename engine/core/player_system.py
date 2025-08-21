@@ -132,36 +132,60 @@ class Player:
         return available
 
     def _can_pay_mana_cost(self, cost) -> bool:
-        """Check if we can pay a mana cost - uses same logic as tap_lands_for_spell"""
-        untapped_lands = [land for land in self.get_lands() if not land.is_tapped]
-        lands_used = []
+        """Check if we can pay a mana cost with current mana pool + untapped lands"""
+        # Start with mana already in pool
+        available = {
+            'white': self.mana_pool.mana['white'],
+            'blue': self.mana_pool.mana['blue'],
+            'black': self.mana_pool.mana['black'],
+            'red': self.mana_pool.mana['red'],
+            'green': self.mana_pool.mana['green'],
+            'colorless': self.mana_pool.mana['colorless']
+        }
 
-        # Helper to simulate finding and reserving a land of specific type
-        def can_find_land_for_color(color_name: str, needed: int) -> int:
-            remaining = needed
-            for land in untapped_lands:
-                if remaining <= 0:
-                    break
-                if color_name in land.name and land not in lands_used:
-                    lands_used.append(land)
-                    remaining -= 1
-            return remaining
+        # Add what untapped lands can produce
+        for land in self.get_lands():
+            if not land.is_tapped:
+                if "Plains" in land.name:
+                    available['white'] += 1
+                elif "Island" in land.name:
+                    available['blue'] += 1
+                elif "Swamp" in land.name:
+                    available['black'] += 1
+                elif "Mountain" in land.name:
+                    available['red'] += 1
+                elif "Forest" in land.name:
+                    available['green'] += 1
+                else:
+                    available['colorless'] += 1
 
-        # Try to pay colored costs first - if ANY fail, return False
-        if can_find_land_for_color("Plains", cost.white) > 0:
-            return False
-        if can_find_land_for_color("Island", cost.blue) > 0:
-            return False
-        if can_find_land_for_color("Swamp", cost.black) > 0:
-            return False
-        if can_find_land_for_color("Mountain", cost.red) > 0:
-            return False
-        if can_find_land_for_color("Forest", cost.green) > 0:
+        # Check if we have enough of each specific color
+        if (cost.white > available['white'] or
+                cost.blue > available['blue'] or
+                cost.black > available['black'] or
+                cost.red > available['red'] or
+                cost.green > available['green']):
             return False
 
-        # Check if we can pay generic cost with remaining untapped lands
-        remaining_lands = [land for land in untapped_lands if land not in lands_used]
-        return len(remaining_lands) >= cost.generic
+        # If there's a colorless requirement (rare, for Eldrazi), check it
+        if hasattr(cost, 'colorless') and cost.colorless > 0:
+            if cost.colorless > available['colorless']:
+                return False
+
+        # Calculate remaining mana after paying colored (and colorless) costs
+        remaining_mana = {
+            'white': available['white'] - cost.white,
+            'blue': available['blue'] - cost.blue,
+            'black': available['black'] - cost.black,
+            'red': available['red'] - cost.red,
+            'green': available['green'] - cost.green,
+            'colorless': available['colorless'] - getattr(cost, 'colorless', 0)
+        }
+
+        # Total remaining mana can pay for generic costs
+        total_remaining = sum(remaining_mana.values())
+
+        return total_remaining >= cost.generic
 
     def get_total_available_mana(self) -> int:
         """Get total available mana from pool + untapped lands (for display only)"""
@@ -185,12 +209,31 @@ class Player:
             return False
 
         cost = spell.mana_cost
+
+        # First, check what we need vs what's already in the pool
+        needed = {
+            'white': max(0, cost.white - self.mana_pool.mana['white']),
+            'blue': max(0, cost.blue - self.mana_pool.mana['blue']),
+            'black': max(0, cost.black - self.mana_pool.mana['black']),
+            'red': max(0, cost.red - self.mana_pool.mana['red']),
+            'green': max(0, cost.green - self.mana_pool.mana['green']),
+            'colorless': max(0, getattr(cost, 'colorless', 0) - self.mana_pool.mana['colorless'])
+        }
+
+        # Calculate generic mana needed after colored requirements
+        generic_needed = cost.generic
+
+        # If we don't need to tap any lands (pool has everything), return True
+        total_needed = sum(needed.values()) + generic_needed
+        if total_needed == 0:
+            return True
+
         untapped_lands = [land for land in self.get_lands() if not land.is_tapped]
         lands_to_tap = []
 
         # Helper to find and reserve a land of specific type
-        def find_land_for_color(color_name: str, needed: int) -> int:
-            remaining = needed
+        def find_land_for_color(color_name: str, needed_amount: int) -> int:
+            remaining = needed_amount
             for land in untapped_lands:
                 if remaining <= 0:
                     break
@@ -199,15 +242,26 @@ class Player:
                     remaining -= 1
             return remaining
 
-        # Pay colored costs first
-        white_remaining = find_land_for_color("Plains", cost.white)
-        blue_remaining = find_land_for_color("Island", cost.blue)
-        black_remaining = find_land_for_color("Swamp", cost.black)
-        red_remaining = find_land_for_color("Mountain", cost.red)
-        green_remaining = find_land_for_color("Forest", cost.green)
+        # Pay colored costs first (only what we need beyond pool)
+        white_remaining = find_land_for_color("Plains", needed['white'])
+        blue_remaining = find_land_for_color("Island", needed['blue'])
+        black_remaining = find_land_for_color("Swamp", needed['black'])
+        red_remaining = find_land_for_color("Mountain", needed['red'])
+        green_remaining = find_land_for_color("Forest", needed['green'])
 
-        # Pay generic cost with any remaining lands
-        generic_remaining = cost.generic
+        # For generic cost, first see what's left in pool after colored costs
+        pool_available_for_generic = (
+                max(0, self.mana_pool.mana['white'] - cost.white) +
+                max(0, self.mana_pool.mana['blue'] - cost.blue) +
+                max(0, self.mana_pool.mana['black'] - cost.black) +
+                max(0, self.mana_pool.mana['red'] - cost.red) +
+                max(0, self.mana_pool.mana['green'] - cost.green) +
+                max(0, self.mana_pool.mana['colorless'] - getattr(cost, 'colorless', 0))
+        )
+
+        generic_remaining = max(0, generic_needed - pool_available_for_generic)
+
+        # Pay remaining generic cost with any untapped lands
         for land in untapped_lands:
             if generic_remaining <= 0:
                 break
@@ -215,10 +269,10 @@ class Player:
                 lands_to_tap.append(land)
                 generic_remaining -= 1
 
-        # Final validation (should never fail if _can_pay_mana_cost returned True)
+        # Final validation
         if (white_remaining > 0 or blue_remaining > 0 or black_remaining > 0 or
-            red_remaining > 0 or green_remaining > 0 or generic_remaining > 0):
-            game_logger.log_event(f"Mana payment failed: W{white_remaining} U{blue_remaining} B{black_remaining} R{red_remaining} G{green_remaining} Generic{generic_remaining}")
+                red_remaining > 0 or green_remaining > 0 or generic_remaining > 0):
+            game_logger.log_event(f"Not enough untapped lands to cast {spell.name}")
             return False
 
         # Actually tap the lands and add mana
