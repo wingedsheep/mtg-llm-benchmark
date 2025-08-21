@@ -1,9 +1,19 @@
 """
-Banishing Light - Enchantment
+Complete Banishing Light implementation with targeting and exile effects.
+Replace the existing banishing_light.py file with this implementation.
 """
 
-from engine.core.card_system import Card
-from engine.core.effects_system import Effect, Ability
+from typing import List, Optional, TYPE_CHECKING
+
+from engine.core.card_system import Card, exile_tracker
+from engine.core.core_types import GameEvent, Zone
+from engine.core.display_system import game_logger
+from engine.core.targeting_system import targeting_system
+
+if TYPE_CHECKING:
+    from engine.core.targeting_system import TargetFilter
+    from engine.core.game_state import GameState
+    from engine.core.player_system import Player
 
 
 class BanishingLight(Card):
@@ -24,12 +34,60 @@ class BanishingLight(Card):
         defaults.update(kwargs)
         super().__init__(**defaults)
 
-    def setup_card_behavior(self):
-        # ETB effect: exile target permanent (simplified for now)
-        def exile_effect(game_state, source):
-            # TODO: Implement proper targeting system
-            # For now, just a placeholder
-            pass
+    def get_target_filter(self) -> Optional['TargetFilter']:
+        """This spell targets nonland permanents opponents control"""
+        return targeting_system.create_nonland_permanent_opponent_filter()
 
-        exile_ability = Effect("exile target nonland permanent", exile_effect)
-        self.abilities.append(Ability("triggered", "enters_battlefield", effect=exile_ability))
+    def resolve_spell(self, game_state: 'GameState', caster: 'Player', targets: List['Card']) -> bool:
+        """Resolve Banishing Light - exile target, then enter battlefield"""
+        try:
+            # Banishing Light enters the battlefield first
+            caster.battlefield.append(self)
+            self.zone = Zone.BATTLEFIELD
+            self.controller = caster
+
+            game_logger.log_event(f"{self.name} enters the battlefield")
+
+            # Then trigger its ETB ability
+            if targets:
+                target = targets[0]  # Should be exactly one target
+
+                # Exile the target
+                exile_tracker.exile_card(self, target)
+                game_logger.log_event(f"{self.name} exiles {target.name}")
+
+                # Trigger death event if creature died
+                if target.is_creature():
+                    death_event = GameEvent("dies", card=target)
+                    game_state.trigger_manager.check_triggers(death_event, game_state)
+            else:
+                game_logger.log_event(f"{self.name} enters but has no valid targets")
+
+            # Trigger ETB event for this enchantment
+            etb_event = GameEvent("enters_battlefield", card=self)
+            game_state.trigger_manager.check_triggers(etb_event, game_state)
+
+            return True
+
+        except Exception as e:
+            game_logger.log_event(f"Error resolving {self.name}: {e}")
+            # Put in graveyard if resolution failed
+            caster.graveyard.append(self)
+            self.zone = Zone.GRAVEYARD
+            return False
+
+    def leaves_battlefield(self):
+        """When Banishing Light leaves, return exiled cards"""
+        super().leaves_battlefield()
+
+        # Return all cards this Banishing Light exiled
+        returned_cards = exile_tracker.return_exiled_cards(self)
+
+        if returned_cards:
+            returned_names = [card.name for card in returned_cards]
+            game_logger.log_event(f"{self.name} returns: {', '.join(returned_names)}")
+
+    def setup_card_behavior(self):
+        """Banishing Light's behavior is handled in resolve_spell"""
+        # No abilities to set up - this is a spell with a resolution effect
+        pass

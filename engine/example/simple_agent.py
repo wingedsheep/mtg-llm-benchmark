@@ -33,11 +33,11 @@ class SimpleAgent:
             return MulliganDecision("keep")
 
         # Too few or too many lands
-        if lands <= 1 or lands >= 6:
+        if lands <= 1 or lands >= 5:
             return MulliganDecision("mulligan")
 
-        # Good land count (2-5), check if we have playable spells
-        if 2 <= lands <= 5:
+        # Good land count (2-4), check if we have playable spells
+        if 2 <= lands <= 4:
             # Keep if we have some spells we can cast
             affordable_spells = sum(1 for card in player.hand
                                    if not card.is_land() and card.mana_cost.total_cmc() <= lands + 1)
@@ -174,13 +174,13 @@ class SimpleAgent:
 
         return scored_spells[0][1]
 
-    def choose_cards_to_bottom(self, player, num_to_bottom: int) -> List:
+    def choose_cards_to_bottom(self, player, num_to_bottom: int) -> List[str]:
         """
-        Choose which cards to put on bottom of library during mulligan
+        Choose which card IDs to put on bottom of library during mulligan
         Strategy: Bottom the most expensive cards that we can't cast soon
         """
         if num_to_bottom >= len(player.hand):
-            return player.hand.copy()
+            return [card.id for card in player.hand]
 
         # Score each card - lower score = more likely to bottom
         scored_cards = []
@@ -209,7 +209,7 @@ class SimpleAgent:
         # Sort by score (lowest first - these get bottomed)
         scored_cards.sort(key=lambda x: x[0])
 
-        return [card for score, card in scored_cards[:num_to_bottom]]
+        return [card.id for score, card in scored_cards[:num_to_bottom]]
 
     def __str__(self):
         return f"SimpleAgent({self.name})"

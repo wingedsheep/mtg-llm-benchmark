@@ -1,11 +1,12 @@
 """
-Enhanced sample game with improved phase logging and auto-skip functionality.
+Enhanced sample game with improved phase logging and detailed game logger output.
 """
 
 import time
 
 from engine.cards import Plains, Island, DockworkerDrone, BanishingLight, IllvoiGaleblade
 from engine.core.deck_system import DeckConfiguration
+from engine.core.display_system import game_logger
 from engine.core.game_setup import GameSetupManager
 from engine.core.game_state import GameState
 from engine.example.simple_agent import SimpleAgent
@@ -22,9 +23,16 @@ def create_sample_deck_config() -> DeckConfiguration:
     ])
 
 
-def run_enhanced_game(max_turns: int = 10, show_details: bool = True, delay: float = 0.3) -> str:
+def run_enhanced_game(max_turns: int = 10, show_details: bool = True,
+                     show_logger: bool = True, delay: float = 0.3) -> str:
     """
-    Run a game with enhanced logging and auto-skip functionality
+    Run a game with enhanced logging and real-time game logger output
+
+    Args:
+        max_turns: Maximum number of turns to play
+        show_details: Show detailed game state info
+        show_logger: Show real-time game logger output
+        delay: Delay between actions for readability
     """
     print("=== SETTING UP ENHANCED GAME ===")
 
@@ -74,6 +82,9 @@ def run_enhanced_game(max_turns: int = 10, show_details: bool = True, delay: flo
 
     print(f"\n=== GAME START ===")
 
+    # Track last logger position to show new entries
+    last_log_position = 0
+
     # Game loop
     turn_count = 0
     action_count = 0
@@ -85,6 +96,22 @@ def run_enhanced_game(max_turns: int = 10, show_details: bool = True, delay: flo
 
         if show_details:
             print(f"\n>>> {game.get_current_phase_info()}")
+
+            # Show recent game state
+            if action_count % 5 == 0:  # Show every 5 actions to avoid spam
+                print(f"\n--- GAME STATE ---")
+                print(f"{current_player.name}: {current_player.life} life, {len(current_player.hand)} cards in hand, {len(current_player.battlefield)} permanents")
+                opponent = game.players[0] if game.players[1] == current_player else game.players[1]
+                print(f"{opponent.name}: {opponent.life} life, {len(opponent.hand)} cards in hand, {len(opponent.battlefield)} permanents")
+
+                if current_player.battlefield:
+                    print(f"{current_player.name}'s battlefield:")
+                    for permanent in current_player.battlefield:
+                        status = " (tapped)" if permanent.is_tapped else ""
+                        if permanent.is_creature():
+                            print(f"  - {permanent.name} {permanent.current_power()}/{permanent.current_toughness()}{status}")
+                        else:
+                            print(f"  - {permanent.name}{status}")
 
         # Get legal actions
         legal_actions = game.get_legal_actions(current_player)
@@ -112,6 +139,18 @@ def run_enhanced_game(max_turns: int = 10, show_details: bool = True, delay: flo
         # Show action if detailed
         if show_details:
             print(f"Action: {chosen_action.description}")
+
+        # Show new game logger entries in real-time
+        if show_logger:
+            current_log = game_logger.get_full_log()
+            if current_log:
+                log_lines = current_log.split('\n')
+                if len(log_lines) > last_log_position:
+                    new_lines = log_lines[last_log_position:]
+                    for line in new_lines:
+                        if line.strip():  # Skip empty lines
+                            print(f"  LOG: {line}")
+                    last_log_position = len(log_lines)
 
         action_count += 1
 
@@ -149,13 +188,32 @@ def run_enhanced_game(max_turns: int = 10, show_details: bool = True, delay: flo
     if show_details:
         print(f"\nTotal actions taken: {action_count}")
         print(f"Turns played: {turn_count}")
-        print(f"\n=== GAME LOG ===")
-        print(game.get_game_log())
 
     return result
 
 
+def run_debug_game():
+    """Run a game with maximum debugging output"""
+    print("Running debug game with full logging:")
+    return run_enhanced_game(
+        max_turns=8,
+        show_details=True,
+        show_logger=True,  # Show real-time logger output
+        delay=0.8  # Slower for debugging
+    )
+
+
+def run_quick_game():
+    """Run a quick game with minimal output"""
+    print("Running quick game:")
+    return run_enhanced_game(
+        max_turns=15,
+        show_details=False,
+        show_logger=False,
+        delay=0.1
+    )
+
+
 if __name__ == "__main__":
-    # Run a single detailed game with enhanced logging
-    print("Running enhanced game with auto-skip and detailed logging:")
-    run_enhanced_game(max_turns=15, show_details=True, delay=0.5)
+    # Run a debug game with full logging
+    run_debug_game()

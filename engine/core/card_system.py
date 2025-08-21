@@ -11,6 +11,8 @@ from engine.core.mana_system import ManaCost
 
 if TYPE_CHECKING:
     from engine.core.player_system import Player
+    from engine.core.targeting_system import TargetFilter
+    from engine.core.game_state import GameState
 
 
 class Card:
@@ -167,6 +169,34 @@ class Card:
         )
         return new_card
 
+    # === NEW TARGETING AND SPELL RESOLUTION METHODS ===
+
+    def get_target_filter(self) -> Optional['TargetFilter']:
+        """Override in subclasses to define targeting requirements"""
+        return None
+
+    def requires_targets(self) -> bool:
+        """Check if this spell requires targets to be cast"""
+        return self.get_target_filter() is not None
+
+    def resolve_spell(self, game_state: 'GameState', caster: 'Player', targets: List['Card']) -> bool:
+        """Override in subclasses to define spell resolution effects"""
+        # Default: just put in graveyard
+        caster.graveyard.append(self)
+        self.zone = Zone.GRAVEYARD
+        return True
+
+    def get_targetable_id(self) -> str:
+        """Get the ID that can be used to target this card"""
+        return self.id
+
+    def get_display_info_for_targeting(self) -> str:
+        """Get display string for targeting UI"""
+        if self.is_creature():
+            return f"{self.name} ({self.current_power()}/{self.current_toughness()}) [ID: {self.id[:8]}]"
+        else:
+            return f"{self.name} [ID: {self.id[:8]}]"
+
     @classmethod
     def get_card_name(cls) -> str:
         """Get the card name for this class - override in subclasses"""
@@ -179,6 +209,64 @@ class Card:
 
     def __repr__(self) -> str:
         return self.__str__()
+
+
+class ExileTracker:
+    """Tracks cards exiled by specific sources"""
+
+    def __init__(self):
+        self.exiled_by_source = {}  # source_card_id -> list of exiled cards
+
+    def exile_card(self, source_card: 'Card', target_card: 'Card'):
+        """Exile a card, tracking the source"""
+
+        if source_card.id not in self.exiled_by_source:
+            self.exiled_by_source[source_card.id] = []
+
+        self.exiled_by_source[source_card.id].append(target_card)
+
+        # Move card to exile zone
+        if target_card.zone == Zone.BATTLEFIELD:
+            target_card.controller.battlefield.remove(target_card)
+            target_card.leaves_battlefield()
+        elif target_card.zone == Zone.HAND:
+            target_card.controller.hand.remove(target_card)
+        elif target_card.zone == Zone.GRAVEYARD:
+            target_card.controller.graveyard.remove(target_card)
+
+        target_card.owner.exile.append(target_card)
+        target_card.zone = Zone.EXILE
+
+    def return_exiled_cards(self, source_card: 'Card'):
+        """Return all cards exiled by this source"""
+
+        if source_card.id not in self.exiled_by_source:
+            return []
+
+        exiled_cards = self.exiled_by_source[source_card.id]
+        returned_cards = []
+
+        for card in exiled_cards:
+            if card.zone == Zone.EXILE and card in card.owner.exile:
+                # Return to battlefield under owner's control
+                card.owner.exile.remove(card)
+                card.owner.battlefield.append(card)
+                card.zone = Zone.BATTLEFIELD
+                card.controller = card.owner
+                card.enters_battlefield()
+                returned_cards.append(card)
+
+                # Trigger ETB if it's a creature/permanent
+                if hasattr(card, 'enters_battlefield'):
+                    # This will be handled by the game state's trigger system
+                    pass
+
+        # Clear the tracking
+        if source_card.id in self.exiled_by_source:
+            del self.exiled_by_source[source_card.id]
+
+        return returned_cards
+
 
 class CardDatabase:
     """Database for storing and retrieving card definitions"""
@@ -213,5 +301,7 @@ class CardDatabase:
         """Get all registered card names"""
         return list(self.cards.keys())
 
-# Global card database instance
+
+# Global instances
+exile_tracker = ExileTracker()
 card_database = CardDatabase()

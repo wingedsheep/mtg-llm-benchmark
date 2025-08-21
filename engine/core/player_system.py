@@ -1,6 +1,7 @@
 """
 Fixed player system for the MTG engine.
 Manages player state, decks, and player actions with correct turn handling.
+Updated with proper mana payment and spell casting integration.
 """
 
 import random
@@ -8,6 +9,7 @@ from typing import List, Optional
 
 from engine.core.card_system import Card
 from engine.core.core_types import Zone
+from engine.core.display_system import game_logger
 from engine.core.mana_system import ManaPool
 
 
@@ -100,38 +102,179 @@ class Player:
 
         return True
 
+    def _get_available_mana_by_color(self) -> dict:
+        """Get available mana by color from mana pool + untapped lands"""
+        available = {
+            'white': self.mana_pool.mana['white'],
+            'blue': self.mana_pool.mana['blue'],
+            'black': self.mana_pool.mana['black'],
+            'red': self.mana_pool.mana['red'],
+            'green': self.mana_pool.mana['green'],
+            'colorless': self.mana_pool.mana['colorless']
+        }
+
+        # Add what untapped lands can produce
+        for land in self.get_lands():
+            if not land.is_tapped:
+                if "Plains" in land.name:
+                    available['white'] += 1
+                elif "Island" in land.name:
+                    available['blue'] += 1
+                elif "Swamp" in land.name:
+                    available['black'] += 1
+                elif "Mountain" in land.name:
+                    available['red'] += 1
+                elif "Forest" in land.name:
+                    available['green'] += 1
+                else:
+                    available['colorless'] += 1
+
+        return available
+
+    def _can_pay_mana_cost(self, cost) -> bool:
+        """Check if we can pay a mana cost - uses same logic as tap_lands_for_spell"""
+        untapped_lands = [land for land in self.get_lands() if not land.is_tapped]
+        lands_used = []
+
+        # Helper to simulate finding and reserving a land of specific type
+        def can_find_land_for_color(color_name: str, needed: int) -> int:
+            remaining = needed
+            for land in untapped_lands:
+                if remaining <= 0:
+                    break
+                if color_name in land.name and land not in lands_used:
+                    lands_used.append(land)
+                    remaining -= 1
+            return remaining
+
+        # Try to pay colored costs first - if ANY fail, return False
+        if can_find_land_for_color("Plains", cost.white) > 0:
+            return False
+        if can_find_land_for_color("Island", cost.blue) > 0:
+            return False
+        if can_find_land_for_color("Swamp", cost.black) > 0:
+            return False
+        if can_find_land_for_color("Mountain", cost.red) > 0:
+            return False
+        if can_find_land_for_color("Forest", cost.green) > 0:
+            return False
+
+        # Check if we can pay generic cost with remaining untapped lands
+        remaining_lands = [land for land in untapped_lands if land not in lands_used]
+        return len(remaining_lands) >= cost.generic
+
+    def get_total_available_mana(self) -> int:
+        """Get total available mana from pool + untapped lands (for display only)"""
+        pool_mana = self.mana_pool.total_mana()
+
+        # Count untapped lands
+        untapped_lands = len([land for land in self.get_lands() if not land.is_tapped])
+
+        return pool_mana + untapped_lands
+
     def can_cast_spell(self, spell: Card) -> bool:
         """Check if player can cast a spell"""
         if spell not in self.hand or spell.is_land():
             return False
 
-        return self.mana_pool.can_pay_cost(spell.mana_cost)
+        return self._can_pay_mana_cost(spell.mana_cost)
+
+    def tap_lands_for_spell(self, spell: Card) -> bool:
+        """Tap untapped lands to pay for a spell's mana cost"""
+        if not self._can_pay_mana_cost(spell.mana_cost):
+            return False
+
+        cost = spell.mana_cost
+        untapped_lands = [land for land in self.get_lands() if not land.is_tapped]
+        lands_to_tap = []
+
+        # Helper to find and reserve a land of specific type
+        def find_land_for_color(color_name: str, needed: int) -> int:
+            remaining = needed
+            for land in untapped_lands:
+                if remaining <= 0:
+                    break
+                if color_name in land.name and land not in lands_to_tap:
+                    lands_to_tap.append(land)
+                    remaining -= 1
+            return remaining
+
+        # Pay colored costs first
+        white_remaining = find_land_for_color("Plains", cost.white)
+        blue_remaining = find_land_for_color("Island", cost.blue)
+        black_remaining = find_land_for_color("Swamp", cost.black)
+        red_remaining = find_land_for_color("Mountain", cost.red)
+        green_remaining = find_land_for_color("Forest", cost.green)
+
+        # Pay generic cost with any remaining lands
+        generic_remaining = cost.generic
+        for land in untapped_lands:
+            if generic_remaining <= 0:
+                break
+            if land not in lands_to_tap:
+                lands_to_tap.append(land)
+                generic_remaining -= 1
+
+        # Final validation (should never fail if _can_pay_mana_cost returned True)
+        if (white_remaining > 0 or blue_remaining > 0 or black_remaining > 0 or
+            red_remaining > 0 or green_remaining > 0 or generic_remaining > 0):
+            game_logger.log_event(f"Mana payment failed: W{white_remaining} U{blue_remaining} B{black_remaining} R{red_remaining} G{green_remaining} Generic{generic_remaining}")
+            return False
+
+        # Actually tap the lands and add mana
+        for land in lands_to_tap:
+            land.is_tapped = True
+
+            if "Plains" in land.name:
+                self.mana_pool.add_mana('white')
+            elif "Island" in land.name:
+                self.mana_pool.add_mana('blue')
+            elif "Swamp" in land.name:
+                self.mana_pool.add_mana('black')
+            elif "Mountain" in land.name:
+                self.mana_pool.add_mana('red')
+            elif "Forest" in land.name:
+                self.mana_pool.add_mana('green')
+            else:
+                self.mana_pool.add_mana('colorless')
+
+        if lands_to_tap:
+            land_names = [land.name for land in lands_to_tap]
+            game_logger.log_event(f"{self.name} taps {len(lands_to_tap)} lands: {', '.join(land_names)}")
+
+        return True
 
     def cast_spell(self, spell: Card) -> bool:
-        """Cast a spell from hand"""
+        """Cast a spell from hand - this is the simple version for backwards compatibility"""
         if not self.can_cast_spell(spell):
+            return False
+
+        # Tap lands for mana if needed
+        if not self.tap_lands_for_spell(spell):
             return False
 
         # Pay mana cost
         if not self.mana_pool.pay_cost(spell.mana_cost):
             return False
 
-        # Move spell to appropriate zone
-        self.hand.remove(spell)
-
+        # Remove spell from hand - the spell system will handle the rest
+        # This method is now mainly used for creatures that go directly to battlefield
         if spell.is_creature():
-            # Creatures go directly to battlefield
+            self.hand.remove(spell)
             self.battlefield.append(spell)
+            spell.zone = Zone.BATTLEFIELD
+            spell.controller = self
             spell.enters_battlefield()
+            return True
         else:
-            # Other spells go to stack (simplified - resolve immediately)
-            # TODO: Implement proper stack
+            # Non-creatures should use spell_system.cast_spell_with_targets instead
+            # This is just for backwards compatibility
+            self.hand.remove(spell)
             self.resolve_spell(spell)
-
-        return True
+            return True
 
     def resolve_spell(self, spell: Card):
-        """Resolve a spell (simplified)"""
+        """Resolve a spell (simplified fallback)"""
         # Execute spell effects here
         # For now, just put non-permanents in graveyard
         if not spell.is_creature():
@@ -223,10 +366,8 @@ class Player:
         return self.life > 0
 
     def get_available_mana(self) -> int:
-        """Get total available mana (from lands and pool)"""
-        lands_mana = len([land for land in self.get_lands() if not land.is_tapped])
-        pool_mana = self.mana_pool.total_mana()
-        return lands_mana + pool_mana
+        """Get total available mana (from lands and pool) - deprecated, use get_total_available_mana"""
+        return self.get_total_available_mana()
 
     def tap_lands_for_mana(self, amount: int, color: str = None) -> int:
         """Tap lands to add mana to pool, returns amount actually added"""

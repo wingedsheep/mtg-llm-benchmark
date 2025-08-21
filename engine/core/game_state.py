@@ -1,7 +1,7 @@
 """
 Fixed game state management for the MTG engine.
 Ensures proper turn structure, phase progression, and game flow.
-FIXED: Resets combat declaration flags when entering combat phases.
+Updated with spell resolution and stack handling.
 """
 
 from typing import List, Optional, Any
@@ -28,7 +28,7 @@ class GameState:
         self.phase = Phase.UNTAP
 
         # Game state
-        self.stack: List[Any] = []
+        self.stack: List[Any] = []  # Stack of spells/abilities
         self.game_over = False
         self.winner: Optional[Player] = None
 
@@ -134,8 +134,28 @@ class GameState:
         """Pass priority to the next player"""
         current_player = self.priority_player.name
 
-        # If stack is empty and all players pass, move to next phase
-        if not self.stack:
+        # If stack has spells, handle stack resolution
+        if self.stack:
+            next_priority = 1 - self.priority_player_index
+
+            if next_priority == self.active_player_index:
+                # Priority has gone around with stack - resolve top of stack
+                from engine.core.spell_system import spell_system
+
+                game_logger.log_event(f"All players pass - resolving top of stack")
+                spell_system.resolve_top_of_stack(self)
+
+                # Priority goes back to active player after resolution
+                self.priority_player_index = self.active_player_index
+                new_player = self.priority_player.name
+                game_logger.log_event(f"After resolution, priority to: {new_player}")
+            else:
+                # Just pass priority
+                self.priority_player_index = next_priority
+                new_player = self.priority_player.name
+                game_logger.log_event(f"Priority passed (stack): {current_player} → {new_player}")
+        else:
+            # Empty stack - normal priority passing
             next_priority = 1 - self.priority_player_index
 
             if next_priority == self.active_player_index:
@@ -146,11 +166,6 @@ class GameState:
                 self.priority_player_index = next_priority
                 new_player = self.priority_player.name
                 game_logger.log_event(f"Priority passed: {current_player} → {new_player}")
-        else:
-            # Handle stack resolution (simplified for now)
-            self.priority_player_index = 1 - self.priority_player_index
-            new_player = self.priority_player.name
-            game_logger.log_event(f"Priority passed (stack resolution): {current_player} → {new_player}")
 
     def _next_phase(self):
         """Move to the next phase"""
@@ -210,7 +225,7 @@ class GameState:
         elif self.phase == Phase.DRAW:
             # First player doesn't draw on their very first turn (turn 1)
             # But second player draws on their first turn (which is turn 2)
-            should_draw = not (self.turn_number == 1 and self.active_player.turn_count == 0)
+            should_draw = self.turn_number > 1
 
             if should_draw:
                 self.active_player.draw_step()
@@ -346,6 +361,42 @@ class GameState:
         """Get current phase information for debugging"""
         return f"Turn {self.turn_number} | {self.phase.value.title()} Phase | Active: {self.active_player.name} | Priority: {self.priority_player.name}"
 
+    # === NEW STACK AND TARGETING METHODS ===
+
+    def get_stack_info(self) -> str:
+        """Get formatted information about the current stack"""
+        if not self.stack:
+            return "Stack is empty"
+
+        lines = ["Stack (top to bottom):"]
+        for i, stack_obj in enumerate(reversed(self.stack)):
+            spell = stack_obj.source_card
+            caster = stack_obj.caster
+            targets = stack_obj.targets
+
+            line = f"{i+1}. {spell.name} (cast by {caster.name})"
+            if targets:
+                target_names = [t.name for t in targets]
+                line += f" targeting {', '.join(target_names)}"
+
+            lines.append(line)
+
+        return "\n".join(lines)
+
+    def get_targeting_info_for_spell(self, player: Player, spell_name: str) -> dict:
+        """Get targeting information for a spell (for agent UI)"""
+        # Find the spell in player's hand
+        spell = None
+        for card in player.hand:
+            if card.name == spell_name:
+                spell = card
+                break
+
+        if not spell:
+            return {"error": f"Spell {spell_name} not found in hand"}
+
+        return action_generator.get_targeting_info_for_spell(self, player, spell)
+
     def save_state(self) -> dict:
         """Save current game state (for AI analysis, etc.)"""
         return {
@@ -353,13 +404,16 @@ class GameState:
             'active_player': self.active_player.name,
             'priority_player': self.priority_player.name,
             'phase': self.phase.value,
+            'stack_size': len(self.stack),
+            'stack_spells': [obj.source_card.name for obj in self.stack] if self.stack else [],
             'players': [
                 {
                     'name': p.name,
                     'life': p.life,
                     'hand_size': len(p.hand),
                     'battlefield_size': len(p.battlefield),
-                    'mana_pool': p.mana_pool.mana.copy()
+                    'mana_pool': p.mana_pool.mana.copy(),
+                    'available_mana': p.get_total_available_mana()
                 }
                 for p in self.players
             ],

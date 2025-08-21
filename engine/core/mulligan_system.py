@@ -9,14 +9,15 @@ from typing import List, Dict, Callable, Optional, TYPE_CHECKING
 from engine.core.core_types import Zone
 from engine.core.deck_system import DeckSystem
 from engine.core.display_system import game_logger
-from engine.core.scry_system import ScrySystem, ScryChoice
 
 if TYPE_CHECKING:
     from engine.core.player_system import Player
     from engine.core.card_system import Card
 
+
 class MulliganDecision:
     """Represents a player's mulligan decision"""
+
     def __init__(self, choice: str):
         if choice not in ["keep", "mulligan"]:
             raise ValueError("Mulligan choice must be 'keep' or 'mulligan'")
@@ -28,12 +29,12 @@ class MulliganDecision:
     def is_mulligan(self) -> bool:
         return self.choice == "mulligan"
 
+
 class MulliganSystem:
     """Handles the mulligan phase of the game"""
 
-    def __init__(self, deck_system: DeckSystem, scry_system: ScrySystem):
+    def __init__(self, deck_system: DeckSystem):
         self.deck_system = deck_system
-        self.scry_system = scry_system
         self.mulligan_counts: Dict[str, int] = {}
 
     def initialize_starting_hands(self, players: List['Player'], hand_size: int = 7) -> None:
@@ -44,17 +45,17 @@ class MulliganSystem:
             game_logger.log_event(f"{player.name} draws {hand_size} cards for starting hand")
 
     def perform_mulligan_phase(self, players: List['Player'],
-                              decision_callback: Callable[['Player'], MulliganDecision],
-                              scry_callback: Optional[Callable[['Player', List['Card']], ScryChoice]] = None,
-                              bottom_callback: Optional[Callable[['Player', int], List['Card']]] = None) -> None:
+                               decision_callback: Callable[['Player'], MulliganDecision],
+                               scry_callback: Optional[Callable] = None,
+                               bottom_callback: Optional[Callable[['Player', int], List[str]]] = None) -> None:
         """
         Handle the mulligan phase for all players
 
         Args:
             players: List of players
             decision_callback: Function that takes a player and returns MulliganDecision
-            scry_callback: Function that takes (player, scry_cards) and returns ScryChoice
-            bottom_callback: Function that takes (player, num_to_bottom) and returns list of cards to bottom
+            scry_callback: Ignored - kept for compatibility
+            bottom_callback: Function that takes (player, num_to_bottom) and returns list of card IDs to bottom
         """
         game_logger.log_event("=== MULLIGAN PHASE ===")
 
@@ -69,7 +70,7 @@ class MulliganSystem:
                 current_round_decisions[player] = decision
 
                 if decision.is_keep():
-                    self._finalize_hand(player, scry_callback, bottom_callback)
+                    self._finalize_hand(player, bottom_callback)
                     mulliganing_players.remove(player)
                 elif decision.is_mulligan():
                     self._perform_mulligan(player)
@@ -121,42 +122,60 @@ class MulliganSystem:
         # Shuffle library
         self.deck_system.shuffle_deck(player.library)
 
-        # Always draw 7 cards (London mulligan rule)
+        # Always draw 7 cards
         self.deck_system.draw_cards(player.library, player.hand, 7)
 
         game_logger.log_event(f"{player.name} mulligans (#{self.mulligan_counts[player.name]}) and draws 7 cards")
 
     def _finalize_hand(self, player: 'Player',
-                      scry_callback: Optional[Callable[['Player', List['Card']], ScryChoice]] = None,
-                      bottom_callback: Optional[Callable[['Player', int], List['Card']]] = None) -> None:
+                       bottom_callback: Optional[Callable[['Player', int], List[str]]] = None) -> None:
         """Finalize a player's hand when they choose to keep"""
         mulligan_count = self.mulligan_counts[player.name]
 
-        # First: put cards on bottom of library equal to mulligan count
+        # Put cards on bottom of library equal to mulligan count
         if mulligan_count > 0:
             if bottom_callback:
-                cards_to_bottom = bottom_callback(player, mulligan_count)
-                if len(cards_to_bottom) == mulligan_count and all(card in player.hand for card in cards_to_bottom):
-                    # Remove cards from hand and put on bottom of library
-                    for card in cards_to_bottom:
-                        player.hand.remove(card)
-                        card.zone = Zone.LIBRARY
-                        player.library.append(card)
-                    game_logger.log_event(f"{player.name} puts {mulligan_count} cards on bottom of library")
+                card_ids_to_bottom = bottom_callback(player, mulligan_count)
+
+                if len(card_ids_to_bottom) == mulligan_count:
+                    # Find cards by ID and validate they're in hand
+                    cards_to_bottom = []
+                    for card_id in card_ids_to_bottom:
+                        card = self._find_card_in_hand_by_id(player, card_id)
+                        if card:
+                            cards_to_bottom.append(card)
+                        else:
+                            game_logger.log_event(f"Card ID {card_id} not found in {player.name}'s hand")
+
+                    if len(cards_to_bottom) == mulligan_count:
+                        # Remove cards from hand and put on bottom of library
+                        for card in cards_to_bottom:
+                            player.hand.remove(card)
+                            card.zone = Zone.LIBRARY
+                            player.library.append(card)
+
+                        card_names = [card.name for card in cards_to_bottom]
+                        game_logger.log_event(
+                            f"{player.name} puts {mulligan_count} cards on bottom of library: {', '.join(card_names)}")
+                    else:
+                        game_logger.log_event(f"Invalid card selection from {player.name}, choosing randomly")
+                        self._bottom_cards_randomly(player, mulligan_count)
                 else:
-                    game_logger.log_event(f"Invalid bottom choice from {player.name}, choosing randomly")
+                    game_logger.log_event(
+                        f"Wrong number of cards from {player.name} (got {len(card_ids_to_bottom)}, need {mulligan_count}), choosing randomly")
                     self._bottom_cards_randomly(player, mulligan_count)
             else:
                 # No callback provided, bottom randomly
                 self._bottom_cards_randomly(player, mulligan_count)
 
-            # Then: scry equal to mulligan count
-            if scry_callback:
-                self.scry_system.perform_full_scry(player, mulligan_count, scry_callback)
-            else:
-                game_logger.log_event(f"{player.name} skips scry (no callback provided)")
-
         game_logger.log_event(f"{player.name} keeps their hand of {len(player.hand)} cards")
+
+    def _find_card_in_hand_by_id(self, player: 'Player', card_id: str) -> Optional['Card']:
+        """Find a card in player's hand by its ID"""
+        for card in player.hand:
+            if card.id == card_id:
+                return card
+        return None
 
     def _bottom_cards_randomly(self, player: 'Player', num_to_bottom: int) -> None:
         """Bottom cards randomly when no callback provided"""
@@ -168,7 +187,9 @@ class MulliganSystem:
             card.zone = Zone.LIBRARY
             player.library.append(card)
 
-        game_logger.log_event(f"{player.name} puts {len(cards_to_bottom)} cards on bottom of library (random)")
+        card_names = [card.name for card in cards_to_bottom]
+        game_logger.log_event(
+            f"{player.name} puts {len(cards_to_bottom)} cards on bottom of library (random): {', '.join(card_names)}")
 
     def can_mulligan(self, player: 'Player') -> bool:
         """Check if a player can still mulligan (has cards in hand)"""
@@ -205,7 +226,7 @@ class MulliganSystem:
         lines.append("Current hand:")
         for i, card in enumerate(info['hand']):
             card_text = game_formatter.format_compact_card(card)
-            lines.append(f"{i + 1}. {card_text}")
+            lines.append(f"{i + 1}. {card_text} [ID: {card.id[:8]}]")
 
         lines.append("")
         lines.append(f"Hand composition: {info['lands_in_hand']} lands, {info['spells_in_hand']} spells")
@@ -213,59 +234,15 @@ class MulliganSystem:
         lines.append("")
 
         if info['mulligan_count'] > 0:
-            lines.append(f"If you keep this hand, you will put {info['mulligan_count']} cards on bottom of library, then scry {info['mulligan_count']}.")
+            lines.append(
+                f"If you keep this hand, you will choose {info['mulligan_count']} cards by ID to put on bottom of library.")
 
         lines.append("Choose: 'keep' or 'mulligan'")
 
         return "\n".join(lines)
 
-# Factory function to create mulligan system
+
 def create_mulligan_system() -> MulliganSystem:
     """Create a new mulligan system with dependencies"""
     from engine.core.deck_system import deck_system
-    from engine.core.scry_system import scry_system
-    return MulliganSystem(deck_system, scry_system)
-
-# Example callback functions for testing
-def create_simple_mulligan_callback() -> Callable[['Player'], MulliganDecision]:
-    """Create a simple mulligan callback that always keeps after first mulligan"""
-    def callback(player: 'Player') -> MulliganDecision:
-        # This is just for testing - real agents would make more sophisticated decisions
-        mulligan_system = create_mulligan_system()
-        mulligan_count = mulligan_system.get_mulligan_count(player)
-
-        if mulligan_count >= 1:
-            return MulliganDecision("keep")
-
-        # Simple heuristic for first decision
-        lands = sum(1 for card in player.hand if card.is_land())
-        if lands == 0 or lands >= len(player.hand) - 1:
-            return MulliganDecision("mulligan")
-
-        return MulliganDecision("keep")
-
-    return callback
-
-def create_simple_scry_callback() -> Callable[['Player', List['Card']], ScryChoice]:
-    """Create a simple scry callback for testing"""
-    def callback(player: 'Player', scry_cards: List['Card']) -> ScryChoice:
-        # This is just for testing - real agents would make more sophisticated decisions
-        from engine.core.scry_system import create_default_scry_choice
-        return create_default_scry_choice(scry_cards)
-
-    return callback
-
-def create_simple_bottom_callback() -> Callable[['Player', int], List['Card']]:
-    """Create a simple callback for choosing cards to put on bottom"""
-    def callback(player: 'Player', num_to_bottom: int) -> List['Card']:
-        # Simple heuristic: bottom the highest CMC cards
-        import random
-
-        if num_to_bottom >= len(player.hand):
-            return random.sample(player.hand, num_to_bottom)
-
-        # Sort by CMC (highest first) and take the most expensive
-        hand_by_cmc = sorted(player.hand, key=lambda card: card.mana_cost.total_cmc(), reverse=True)
-        return hand_by_cmc[:num_to_bottom]
-
-    return callback
+    return MulliganSystem(deck_system)

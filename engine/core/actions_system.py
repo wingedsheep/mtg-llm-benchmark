@@ -1,7 +1,7 @@
 """
 Fixed actions system for the MTG engine.
 Handles proper action generation based on game phase and player priority.
-FIXED: Prevents getting stuck in attack declaration phase.
+Updated with targeting support for spells and abilities.
 """
 
 from typing import List, Callable, Any, TYPE_CHECKING
@@ -10,19 +10,19 @@ from engine.core.core_types import Phase, CardType
 from engine.core.display_system import game_logger
 
 if TYPE_CHECKING:
-    from engine.core.game_state import GameState
-    from engine.core.player_system import Player
-    from engine.core.card_system import Card
+    pass
 
 
 class Action:
     """Represents a possible game action"""
 
     def __init__(self, action_type: str, description: str,
-                 execute_func: Callable[['GameState'], Any], **kwargs):
+                 execute_func: Callable[['GameState'], Any],
+                 target_ids: List[str] = None, **kwargs):
         self.action_type = action_type
         self.description = description
         self.execute_func = execute_func
+        self.target_ids = target_ids or []  # Target IDs for spells that need targets
         self.data = kwargs
 
     def execute(self, game_state: 'GameState') -> Any:
@@ -123,7 +123,9 @@ class ActionGenerator:
             if (spell.is_spell() and
                 not spell.has_type(CardType.INSTANT) and
                 player.can_cast_spell(spell)):
-                actions.append(self._create_cast_spell_action(game_state, player, spell))
+                # Get all valid ways to cast this spell
+                spell_actions = self._get_spell_cast_actions(game_state, player, spell)
+                actions.extend(spell_actions)
 
         return actions
 
@@ -171,7 +173,36 @@ class ActionGenerator:
         for spell in player.hand:
             if (spell.has_type(CardType.INSTANT) and
                     player.can_cast_spell(spell)):
-                actions.append(self._create_cast_spell_action(game_state, player, spell))
+                spell_actions = self._get_spell_cast_actions(game_state, player, spell)
+                actions.extend(spell_actions)
+
+        return actions
+
+    def _get_spell_cast_actions(self, game_state: 'GameState', player: 'Player',
+                               spell: 'Card') -> List[Action]:
+        """Get all valid ways to cast a spell (with different target combinations)"""
+        actions = []
+
+        if not spell.requires_targets():
+            # No targets needed - simple cast
+            actions.append(self._create_cast_spell_action(game_state, player, spell))
+        else:
+            # Get all valid targets
+            from engine.core.targeting_system import targeting_system
+
+            target_filter = spell.get_target_filter()
+            valid_targets = targeting_system.get_valid_targets(game_state, player, target_filter)
+
+            if valid_targets:
+                # For now, create one action per valid target
+                # TODO: Support spells that need multiple targets
+                for target in valid_targets:
+                    actions.append(self._create_cast_spell_action(
+                        game_state, player, spell, [target.get_targetable_id()]
+                    ))
+            else:
+                # No valid targets - spell can't be cast
+                pass
 
         return actions
 
@@ -190,23 +221,31 @@ class ActionGenerator:
 
         return Action("play_land", f"Play {land.name}", play_land, card=land)
 
-    def _create_cast_spell_action(self, game_state: 'GameState', player: 'Player', spell: 'Card') -> Action:
-        """Create a cast spell action"""
+    def _create_cast_spell_action(self, game_state: 'GameState', player: 'Player',
+                                 spell: 'Card', target_ids: List[str] = None) -> Action:
+        """Create a cast spell action with optional targets"""
 
         def cast_spell(gs):
-            success = player.cast_spell(spell)
-            if success and spell.is_creature():
-                # Trigger ETB effects for creatures
-                from engine.core.core_types import GameEvent
-                etb_event = GameEvent("enters_battlefield", card=spell)
-                gs.trigger_manager.check_triggers(etb_event, gs)
-                return True
-            return success
+            from engine.core.spell_system import spell_system
+            return spell_system.cast_spell_with_targets(gs, player, spell, target_ids)
 
         mana_str = spell.mana_cost.to_string()
-        description = f"Cast {spell.name} {mana_str}"
 
-        return Action("cast_spell", description, cast_spell, card=spell)
+        # Build description with targets
+        description = f"Cast {spell.name} {mana_str}"
+        if target_ids:
+            from engine.core.targeting_system import targeting_system
+            target_names = []
+            for target_id in target_ids:
+                target_card = targeting_system.find_card_by_id(game_state, target_id)
+                if target_card:
+                    target_names.append(target_card.name)
+
+            if target_names:
+                description += f" targeting {', '.join(target_names)}"
+
+        return Action("cast_spell", description, cast_spell,
+                      target_ids=target_ids, card=spell)
 
     def _create_activate_ability_action(self, game_state: 'GameState', player: 'Player',
                                         card: 'Card', ability) -> Action:
@@ -279,6 +318,30 @@ class ActionGenerator:
 
         description = "Declare no blockers" if not blockers else f"Block with {len(blockers)} creatures"
         return Action("declare_blocks", description, declare_blocks, blockers=blockers)
+
+    def get_targeting_info_for_spell(self, game_state: 'GameState', player: 'Player',
+                                    spell: 'Card') -> dict:
+        """Get targeting information for a spell (for agent decision making)"""
+        if not spell.requires_targets():
+            return {"requires_targets": False}
+
+        from engine.core.targeting_system import targeting_system
+
+        target_filter = spell.get_target_filter()
+        valid_targets = targeting_system.get_valid_targets(game_state, player, target_filter)
+
+        return {
+            "requires_targets": True,
+            "target_description": target_filter.description,
+            "valid_targets": [
+                {
+                    "id": target.get_targetable_id(),
+                    "name": target.name,
+                    "display": target.get_display_info_for_targeting()
+                }
+                for target in valid_targets
+            ]
+        }
 
 
 class ActionValidator:
