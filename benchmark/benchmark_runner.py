@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime
+from pathlib import Path
 
 import yaml
 
@@ -9,6 +10,8 @@ from benchmark.clients.openrouter_client import OpenRouterClient
 from benchmark.draft.card_enhancer import CardEnhancer
 from benchmark.draft.deck_builder import DeckBuilder
 from benchmark.draft.draft_loader import DraftLoader
+from benchmark.forge.deck_exporter import write_forge_dck
+from benchmark.forge.sim_runner import ForgeSimRunner, ForgeSimConfig
 
 
 class BenchmarkRunner:
@@ -42,13 +45,8 @@ class BenchmarkRunner:
         # Step 6: Build decks
         self._build_decks(agent1, agent2)
 
-        # TODO Step 7: Initialize game simulator
-
-        # TODO Step 8: Run the game simulation
-
-        # TODO Step 9: Save results
-
-        # TODO Step 10: Print results
+        # Step 7–10: Run Forge simulation and save results
+        self._run_forge_simulation(agent1, agent2)
 
     def _load_configuration(self):
         """Load configuration from YAML file"""
@@ -442,3 +440,118 @@ class BenchmarkRunner:
             json.dump(comparison, f, indent=2, ensure_ascii=False)
 
         print(f"[INFO] Deck comparison saved to {comparison_file}")
+
+    def _detect_forge_deck_root(self) -> Path:
+        """
+        Resolve the Forge user 'decks' root. Prefer a path that already contains .dck files,
+        so we match the folder you actually see in Finder.
+        """
+        import sys
+        cfg_root = (self.config.get("forge", {}) or {}).get("deck_root")
+        if cfg_root:
+            root = Path(os.path.expanduser(cfg_root))
+            root.mkdir(parents=True, exist_ok=True)
+            return root
+
+        candidates = []
+        if sys.platform == "darwin":
+            candidates += [
+                Path.home() / "Library" / "Application Support" / "Forge" / "decks",
+                Path.home() / "Library" / "Application Support" / "forge" / "decks",
+            ]
+        elif os.name == "nt":
+            appdata = os.environ.get("APPDATA")
+            if appdata:
+                candidates.append(Path(appdata) / "Forge" / "decks")
+            candidates.append(Path.home() / "AppData" / "Roaming" / "Forge" / "decks")
+        else:
+            candidates += [
+                Path.home() / ".forge" / "decks",
+                Path.home() / ".local" / "share" / "Forge" / "decks",
+            ]
+
+        # Prefer an existing candidate that already has any .dck files
+        for c in candidates:
+            if c.exists() and any(c.rglob("*.dck")):
+                return c
+
+        # Otherwise, prefer the first existing directory or create the first candidate
+        for c in candidates:
+            if c.exists():
+                return c
+        candidates[0].mkdir(parents=True, exist_ok=True)
+        return candidates[0]
+
+    def _run_forge_simulation(self, agent1: OpenRouterAgent, agent2: OpenRouterAgent):
+        """Export decks to Forge deck dir (constructed), run sim, save results."""
+        print("[INFO] Running Forge simulation...")
+
+        if not agent1.deck or not agent2.deck:
+            raise RuntimeError("Both agents must have built decks before running Forge simulation.")
+
+        forge_cfg = self.config.get("forge", {})
+        forge_jar = Path(forge_cfg.get("jar_path", "forge.jar"))
+        java_bin = forge_cfg.get("java_bin", "java")
+        matches = forge_cfg.get("matches", 3)
+        games = forge_cfg.get("games")
+        fmt_name = forge_cfg.get("format", "constructed")
+        jvm_args = forge_cfg.get("jvm_args", ["-Xmx2G"])
+
+        if not forge_jar.exists():
+            raise FileNotFoundError(
+                f"Forge jar not found at '{forge_jar}'. "
+                f"Set forge.jar_path in config.yaml to the absolute path of your forge jar."
+            )
+
+        deck_root = self._detect_forge_deck_root()
+        format_dir = fmt_name.lower().replace(" ", "")
+        deck_dir = deck_root / format_dir
+        deck_dir.mkdir(parents=True, exist_ok=True)
+
+        # Timestamped basenames to avoid overwrite
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        a1_base = f"{agent1.name.lower().replace(' ', '_').replace('-', '_')}_{ts}"
+        a2_base = f"{agent2.name.lower().replace(' ', '_').replace('-', '_')}_{ts}"
+
+        # Write .dck into Forge's deck directory
+        deck1_path = write_forge_dck(agent1.deck, deck_dir, a1_base)
+        deck2_path = write_forge_dck(agent2.deck, deck_dir, a2_base)
+
+        print("[INFO] Wrote Forge decks to:")
+        print(f"  - {deck1_path}")
+        print(f"  - {deck2_path}")
+
+        # Show quick listing to confirm presence
+        try:
+            visible = sorted([p.name for p in deck_dir.glob("*.dck")])[:8]
+            print(f"[INFO] Top .dck files in {deck_dir}: {visible}")
+        except Exception:
+            pass
+
+        # Archive copies under the benchmark output for reproducibility
+        archive_dir = Path(self.output_dir) / "forge_decks_copies"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        (archive_dir / deck1_path.name).write_text(deck1_path.read_text(encoding="utf-8"), encoding="utf-8")
+        (archive_dir / deck2_path.name).write_text(deck2_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+        sim = ForgeSimRunner(ForgeSimConfig(
+            java_bin=java_bin,
+            forge_jar=forge_jar,
+            deck_dir=deck_dir,            # NEW: point CLI exactly to where we wrote
+            matches=matches,
+            games=games,
+            format_name=fmt_name,
+            quiet=True,
+            jvm_args=jvm_args,
+        ))
+
+        log_file = Path(self.output_dir) / "forge_sim_output.txt"
+        result = sim.run([deck1_path, deck2_path], log_file)
+
+        summary_path = Path(self.output_dir) / "forge_result.json"
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2, ensure_ascii=False)
+
+        print(f"[INFO] Forge sim finished (rc={result['return_code']}).")
+        print(f"[INFO] Wins: {result['wins']}")
+        print(f"[INFO] Raw log: {result['raw_log']}")

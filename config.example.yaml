@@ -15,3 +15,12 @@ agents:
 draftsim:
   base_url: "https://draftsim.com"
   draft_url: "https://draftsim.com/draft.php?mode=Sealed_EOE"
+
+forge:
+  # Path to your Forge desktop jar (download a release and point this to the jar)
+  jar_path: "/absolute/path/to/forge.jar"
+  java_bin: "java"
+  matches: 3          # best of 3 (uses -m). Set to null and use 'games' to use -n instead
+  games: null         # flat number of games (-n) if you prefer fixed games over BoX
+  format: "constructed"
+  jvm_args: [ "-Xmx4G" ]  # bump if you simulate bigger tournaments

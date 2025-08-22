@@ -1,22 +1,20 @@
 # MTG LLM Benchmark
 
-A text-based Magic: The Gathering game engine designed for language model agents, with an integrated benchmarking system for evaluating LLM performance in strategic card games.
+A benchmarking system that evaluates language models by having them draft cards, build decks, and play Magic: The Gathering matches via Forge in headless mode.
 
 ## Overview
 
-This project consists of two main components:
-
-1. **Game Engine** - A complete MTG game implementation with card mechanics, game rules, and turn-based gameplay
-2. **LLM Benchmark** - A system that tests language models by having them draft cards, build decks, and play games against each other
+This project focuses on:
+- **LLM Benchmarking** – Draft cards, build decks, and run head-to-head games between language models
+- **Forge Integration** – Gameplay and rules are handled by the Forge engine (run in headless CLI simulation mode)
 
 ## Features
 
-- **Complete MTG Engine**: Turn-based gameplay with proper phase management, mana system, combat, and card interactions
-- **Card System**: Extensible card implementation supporting various MTG mechanics
-- **LLM Integration**: Interface for language models to make game decisions through text-based interactions
+- **LLM Integration**: Interface for language models to make drafting and deckbuilding decisions
 - **Automated Drafting**: Integration with draft simulators to create sealed pools
 - **Deck Building**: LLM-powered deck construction from card pools
-- **Head-to-Head Games**: Automated gameplay between different language models
+- **Head-to-Head Games**: Automated gameplay between different language models using Forge
+- **Result Tracking**: Performance analysis and game outcome recording
 
 ## Quick Start
 
@@ -26,50 +24,52 @@ This project consists of two main components:
    ```
 
 2. **Configure**
+
    ```bash
    cp config.example.yaml config.yaml
    # Edit config.yaml with your OpenRouter API key
+   # Set forge.jar_path to your local Forge desktop jar
    ```
 
 3. **Run Benchmark**
+
    ```bash
    python main.py
    ```
 
 ## Architecture
 
-### Game Engine (`engine/`)
-- **Core Systems**: Game state management, turn structure, rules engine
-- **Card System**: Individual card implementations and mechanics
-- **Examples**: Sample games and basic AI agents
-
 ### Benchmark System (`benchmark/`)
-- **Draft Loading**: Automated card pool generation from online draft simulators  
-- **Deck Building**: LLM-powered deck construction with strategic reasoning
-- **Agent Management**: Interface between game engine and language models
-- **Result Tracking**: Performance analysis and game outcome recording
+
+* **Draft Loading**: Automated card pool generation from online draft simulators
+* **Deck Building**: LLM-powered deck construction with strategic reasoning
+* **Agent Management**: Interface between language models and the benchmark flow
+* **Result Tracking**: Game outcomes and analysis
+
+> Gameplay is delegated to **Forge** and executed in headless mode from the benchmark runner.
 
 ## Configuration
 
 The system uses YAML configuration files to specify:
-- Language model endpoints and API keys
-- Agent configurations and model selections  
-- Draft sources and formats
-- Benchmark parameters
+
+* Language model endpoints and API keys
+* Agent configurations and model selections
+* Draft sources and formats
+* Benchmark parameters
+* **Forge settings** (e.g., `forge.jar_path`, matches/games, format)
 
 ## Extending the System
 
-- **Add Cards**: Implement new cards in `engine/cards/`
-- **New Mechanics**: Extend core systems in `engine/core/`
-- **Custom Agents**: Create specialized LLM agents in `benchmark/agents/`
-- **Analysis Tools**: Add result processing in benchmark runners
+* **Custom Agents**: Create specialized LLM agents in `benchmark/agents/`
+* **Analysis Tools**: Add result processing in benchmark runners
 
 ## Requirements
 
-- Python 3.8+
-- OpenRouter API access
-- Chrome/Chromium browser (for draft automation)
-- See `requirements.txt` for full dependencies
+* Python 3.8+
+* OpenRouter API access
+* Chrome/Chromium browser (for draft automation)
+* **Java (for running Forge)**
+* Forge desktop jar (configure `forge.jar_path` in `config.yaml`)
 
 ## License
 
