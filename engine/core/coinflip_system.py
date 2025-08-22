@@ -21,7 +21,7 @@ class CoinflipSystem:
         return random.choice([True, False])
 
     @staticmethod
-    def determine_starting_player(players: List['Player'], interactive: bool = False) -> int:
+    def determine_starting_player(players: List[Player], interactive: bool = False) -> int:
         """
         Determine which player goes first via coinflip
 

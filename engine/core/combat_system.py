@@ -18,7 +18,7 @@ class CombatSystem:
     def __init__(self):
         pass
 
-    def resolve_combat_damage(self, game_state: 'GameState') -> None:
+    def resolve_combat_damage(self, game_state: GameState) -> None:
         """Resolve combat damage step"""
         active_player = game_state.active_player
         defending_player = game_state.non_active_player
@@ -41,7 +41,7 @@ class CombatSystem:
             defending_player.lose_life(total_damage)
             game_logger.log_event(f"{defending_player.name} loses {total_damage} life (now at {defending_player.life})")
 
-    def check_creature_death(self, game_state: 'GameState') -> bool:
+    def check_creature_death(self, game_state: GameState) -> bool:
         """Check for creatures that should die and move them to graveyard"""
         changes_made = False
 
@@ -69,7 +69,7 @@ class CombatSystem:
 
         return changes_made
 
-    def end_combat(self, game_state: 'GameState') -> None:
+    def end_combat(self, game_state: GameState) -> None:
         """Clean up combat state at end of combat"""
         for player in game_state.players:
             for creature in player.get_creatures():

@@ -1,12 +1,13 @@
 """
-Spell resolution system for the MTG engine.
-Handles spells on the stack and their resolution.
+Updated spell resolution system for the MTG engine.
+Now integrates with the prompt-based targeting system.
 """
 
 from typing import List, TYPE_CHECKING
 
 from engine.core.core_types import Zone
 from engine.core.display_system import game_logger
+from engine.core.targeting_system import targeting_system, TargetingError
 
 if TYPE_CHECKING:
     from engine.core.game_state import GameState
@@ -17,12 +18,12 @@ if TYPE_CHECKING:
 class StackObject:
     """Represents a spell or ability on the stack"""
 
-    def __init__(self, source_card: 'Card', caster: 'Player', targets: List['Card'] = None):
+    def __init__(self, source_card: Card, caster: Player, targets: List[Card] = None):
         self.source_card = source_card
         self.caster = caster
         self.targets = targets or []
 
-    def resolve(self, game_state: 'GameState') -> bool:
+    def resolve(self, game_state: GameState) -> bool:
         """Resolve this stack object"""
         try:
             # Call the card's resolve method
@@ -35,7 +36,7 @@ class StackObject:
             game_logger.log_event(f"Error resolving {self.source_card.name}: {e}")
             return False
 
-    def _default_resolve(self, game_state: 'GameState') -> bool:
+    def _default_resolve(self, game_state: GameState) -> bool:
         """Default resolution - just put spell in graveyard"""
         if self.source_card.zone == Zone.STACK:
             self.caster.graveyard.append(self.source_card)
@@ -44,33 +45,46 @@ class StackObject:
 
 
 class SpellSystem:
-    """Handles spell casting and resolution"""
+    """Handles spell casting and resolution with integrated targeting"""
 
     @staticmethod
-    def cast_spell_with_targets(game_state: 'GameState', caster: 'Player',
-                               spell: 'Card', target_ids: List[str] = None) -> bool:
-        """Cast a spell with targets"""
+    def cast_spell_with_targets(game_state: GameState, caster: Player,
+                               spell: Card, target_ids: List[str] = None) -> bool:
+        """
+        Cast a spell, automatically handling targeting if needed
+
+        Args:
+            game_state: Current game state
+            caster: Player casting the spell
+            spell: Spell card being cast
+            target_ids: Optional pre-selected target IDs (for backwards compatibility)
+
+        Returns:
+            True if spell was successfully cast
+        """
         # Validate spell can be cast
         if not caster.can_cast_spell(spell):
+            game_logger.log_event(f"Cannot cast {spell.name} - insufficient mana or other restriction")
             return False
 
-        # Handle targeting if spell requires targets
+        # Handle targeting
         targets = []
-        if hasattr(spell, 'get_target_filter') and spell.get_target_filter():
-            from engine.core.targeting_system import targeting_system
-
-            target_filter = spell.get_target_filter()
+        if spell.requires_targets():
             if target_ids:
+                # Use provided target IDs (backwards compatibility)
                 try:
+                    target_filter = spell.get_target_filter()
                     targets = targeting_system.validate_targets(game_state, caster, target_filter, target_ids)
                 except Exception as e:
                     game_logger.log_event(f"Invalid targets for {spell.name}: {e}")
                     return False
             else:
-                # Check if targets are required
-                valid_targets = targeting_system.get_valid_targets(game_state, caster, target_filter)
-                if valid_targets:  # Targets exist but none provided
-                    game_logger.log_event(f"{spell.name} requires targets but none provided")
+                # Request targets using prompt system
+                try:
+                    target_filter = spell.get_target_filter()
+                    targets = [targeting_system.request_single_target(game_state, caster, target_filter, spell.name)]
+                except TargetingError as e:
+                    game_logger.log_event(f"Cannot target for {spell.name}: {e}")
                     return False
 
         # Tap lands for mana if needed
@@ -116,7 +130,7 @@ class SpellSystem:
         return True
 
     @staticmethod
-    def resolve_top_of_stack(game_state: 'GameState') -> bool:
+    def resolve_top_of_stack(game_state: GameState) -> bool:
         """Resolve the top spell/ability on the stack"""
         if not game_state.stack:
             return False
@@ -125,6 +139,33 @@ class SpellSystem:
         game_logger.log_event(f"Resolving {stack_object.source_card.name}")
 
         return stack_object.resolve(game_state)
+
+    @staticmethod
+    def can_cast_spell_with_targets(game_state: GameState, caster: Player, spell: Card) -> bool:
+        """
+        Check if a spell can be cast, including whether valid targets exist
+
+        Args:
+            game_state: Current game state
+            caster: Player who would cast the spell
+            spell: Spell card to check
+
+        Returns:
+            True if spell can be cast (including valid targets exist if needed)
+        """
+        # Basic casting requirements
+        if not caster.can_cast_spell(spell):
+            return False
+
+        # Check targeting requirements
+        if spell.requires_targets():
+            target_filter = spell.get_target_filter()
+            if target_filter:
+                valid_targets = targeting_system.get_valid_targets(game_state, caster, target_filter)
+                if not valid_targets:
+                    return False
+
+        return True
 
 
 # Singleton spell system

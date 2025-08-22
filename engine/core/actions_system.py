@@ -6,6 +6,8 @@ Updated with targeting support for spells and abilities.
 
 from typing import List, Callable, Any, TYPE_CHECKING
 
+from engine.core import GameState, Player
+from engine.core.card_system import Card
 from engine.core.core_types import Phase, CardType
 from engine.core.display_system import game_logger
 
@@ -17,15 +19,15 @@ class Action:
     """Represents a possible game action"""
 
     def __init__(self, action_type: str, description: str,
-                 execute_func: Callable[['GameState'], Any],
+                 execute_func: Callable[[GameState], Any],
                  target_ids: List[str] = None, **kwargs):
         self.action_type = action_type
         self.description = description
         self.execute_func = execute_func
-        self.target_ids = target_ids or []  # Target IDs for spells that need targets
+        self.target_ids = target_ids or []
         self.data = kwargs
 
-    def execute(self, game_state: 'GameState') -> Any:
+    def execute(self, game_state: GameState) -> Any:
         """Execute this action"""
         return self.execute_func(game_state)
 
@@ -44,7 +46,7 @@ class ActionGenerator:
         self.attacks_declared_this_phase = False
         self.blocks_declared_this_phase = False
 
-    def get_legal_actions(self, game_state: 'GameState', player: 'Player') -> List[Action]:
+    def get_legal_actions(self, game_state: GameState, player: Player) -> List[Action]:
         """Get all legal actions for a player in the current game state"""
         actions = []
 
@@ -71,7 +73,7 @@ class ActionGenerator:
         self.attacks_declared_this_phase = False
         self.blocks_declared_this_phase = False
 
-    def _create_pass_action(self, game_state: 'GameState') -> Action:
+    def _create_pass_action(self, game_state: GameState) -> Action:
         """Create pass priority action"""
 
         def pass_priority(gs):
@@ -79,7 +81,7 @@ class ActionGenerator:
 
         return Action("pass", "Pass priority", pass_priority)
 
-    def _get_active_player_actions(self, game_state: 'GameState', player: 'Player') -> List[Action]:
+    def _get_active_player_actions(self, game_state: GameState, player: Player) -> List[Action]:
         """Get actions available to the active player"""
         actions = []
 
@@ -95,7 +97,7 @@ class ActionGenerator:
 
         return actions
 
-    def _get_non_active_player_actions(self, game_state: 'GameState', player: 'Player') -> List[Action]:
+    def _get_non_active_player_actions(self, game_state: GameState, player: Player) -> List[Action]:
         """Get actions available to the non-active player"""
         actions = []
 
@@ -107,13 +109,13 @@ class ActionGenerator:
 
         return actions
 
-    def _get_main_phase_actions(self, game_state: 'GameState', player: 'Player') -> List[Action]:
+    def _get_main_phase_actions(self, game_state: GameState, player: Player) -> List[Action]:
         """Get actions available during main phases"""
         actions = []
 
         # Play lands (only if player has priority and is active player)
         if (player == game_state.priority_player and
-            not player.has_played_land_this_turn):
+                not player.has_played_land_this_turn):
             lands_in_hand = [card for card in player.hand if card.is_land()]
             for land in lands_in_hand:
                 actions.append(self._create_play_land_action(game_state, player, land))
@@ -121,15 +123,15 @@ class ActionGenerator:
         # Cast sorcery-speed spells
         for spell in player.hand:
             if (spell.is_spell() and
-                not spell.has_type(CardType.INSTANT) and
-                player.can_cast_spell(spell)):
+                    not spell.has_type(CardType.INSTANT) and
+                    player.can_cast_spell(spell)):
                 # Get all valid ways to cast this spell
                 spell_actions = self._get_spell_cast_actions(game_state, player, spell)
                 actions.extend(spell_actions)
 
         return actions
 
-    def _get_attack_actions(self, game_state: 'GameState', player: 'Player') -> List[Action]:
+    def _get_attack_actions(self, game_state: GameState, player: Player) -> List[Action]:
         """Get attack declaration actions"""
         actions = []
 
@@ -149,7 +151,7 @@ class ActionGenerator:
 
         return actions
 
-    def _get_block_actions(self, game_state: 'GameState', player: 'Player') -> List[Action]:
+    def _get_block_actions(self, game_state: GameState, player: Player) -> List[Action]:
         """Get blocking actions for defending player"""
         actions = []
 
@@ -159,7 +161,7 @@ class ActionGenerator:
 
         return actions
 
-    def _get_instant_speed_actions(self, game_state: 'GameState', player: 'Player') -> List[Action]:
+    def _get_instant_speed_actions(self, game_state: GameState, player: Player) -> List[Action]:
         """Get actions available at instant speed"""
         actions = []
 
@@ -178,8 +180,8 @@ class ActionGenerator:
 
         return actions
 
-    def _get_spell_cast_actions(self, game_state: 'GameState', player: 'Player',
-                               spell: 'Card') -> List[Action]:
+    def _get_spell_cast_actions(self, game_state: GameState, player: Player,
+                                spell: Card) -> List[Action]:
         """Get all valid ways to cast a spell (with different target combinations)"""
         actions = []
 
@@ -206,7 +208,7 @@ class ActionGenerator:
 
         return actions
 
-    def _create_play_land_action(self, game_state: 'GameState', player: 'Player', land: 'Card') -> Action:
+    def _create_play_land_action(self, game_state: GameState, player: Player, land: Card) -> Action:
         """Create a play land action"""
 
         def play_land(gs):
@@ -221,8 +223,8 @@ class ActionGenerator:
 
         return Action("play_land", f"Play {land.name}", play_land, card=land)
 
-    def _create_cast_spell_action(self, game_state: 'GameState', player: 'Player',
-                                 spell: 'Card', target_ids: List[str] = None) -> Action:
+    def _create_cast_spell_action(self, game_state: GameState, player: Player,
+                                  spell: Card, target_ids: List[str] = None) -> Action:
         """Create a cast spell action with optional targets"""
 
         def cast_spell(gs):
@@ -247,8 +249,8 @@ class ActionGenerator:
         return Action("cast_spell", description, cast_spell,
                       target_ids=target_ids, card=spell)
 
-    def _create_activate_ability_action(self, game_state: 'GameState', player: 'Player',
-                                        card: 'Card', ability) -> Action:
+    def _create_activate_ability_action(self, game_state: GameState, player: Player,
+                                        card: Card, ability) -> Action:
         """Create an activate ability action"""
 
         def activate_ability(gs):
@@ -257,8 +259,8 @@ class ActionGenerator:
         description = f"Activate {card.name}: {ability.effect.description}"
         return Action("activate_ability", description, activate_ability, card=card, ability=ability)
 
-    def _create_attack_action(self, game_state: 'GameState', player: 'Player',
-                              attackers: List['Card']) -> Action:
+    def _create_attack_action(self, game_state: GameState, player: Player,
+                              attackers: List[Card]) -> Action:
         """Create an attack action"""
 
         def declare_attacks(gs):
@@ -295,8 +297,8 @@ class ActionGenerator:
 
         return Action("declare_attacks", description, declare_attacks, attackers=attackers)
 
-    def _create_block_action(self, game_state: 'GameState', player: 'Player',
-                             blockers: List['Card']) -> Action:
+    def _create_block_action(self, game_state: GameState, player: Player,
+                             blockers: List[Card]) -> Action:
         """Create a block action"""
 
         def declare_blocks(gs):
@@ -319,8 +321,8 @@ class ActionGenerator:
         description = "Declare no blockers" if not blockers else f"Block with {len(blockers)} creatures"
         return Action("declare_blocks", description, declare_blocks, blockers=blockers)
 
-    def get_targeting_info_for_spell(self, game_state: 'GameState', player: 'Player',
-                                    spell: 'Card') -> dict:
+    def get_targeting_info_for_spell(self, game_state: GameState, player: Player,
+                                     spell: Card) -> dict:
         """Get targeting information for a spell (for agent decision making)"""
         if not spell.requires_targets():
             return {"requires_targets": False}
@@ -348,7 +350,7 @@ class ActionValidator:
     """Validates whether actions are legal in the current game state"""
 
     @staticmethod
-    def is_action_legal(action: Action, game_state: 'GameState', player: 'Player') -> bool:
+    def is_action_legal(action: Action, game_state: GameState, player: Player) -> bool:
         """Check if an action is legal for a player in the current state"""
 
         # Player must have priority to take any action
@@ -362,10 +364,10 @@ class ActionValidator:
             return (player == game_state.active_player and
                     game_state.phase in [Phase.MAIN1, Phase.MAIN2] and
                     not player.has_played_land_this_turn and
-                    action.data.get('card') in player.hand)
+                    action.data.get(Card) in player.hand)
 
         elif action.action_type == "cast_spell":
-            card = action.data.get('card')
+            card = action.data.get(Card)
             if not card or card not in player.hand:
                 return False
 
@@ -379,7 +381,7 @@ class ActionValidator:
 
         elif action.action_type == "activate_ability":
             # Most abilities can be activated at instant speed
-            card = action.data.get('card')
+            card = action.data.get(Card)
             ability = action.data.get('ability')
             return card and ability and ability.can_activate(card)
 

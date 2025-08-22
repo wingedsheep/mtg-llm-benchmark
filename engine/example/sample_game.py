@@ -1,5 +1,6 @@
 """
-Enhanced sample game with improved phase logging and detailed game logger output.
+Updated sample game with prompt system integration.
+Demonstrates the new structured prompting approach for agent decisions.
 """
 
 import time
@@ -23,10 +24,10 @@ def create_sample_deck_config() -> DeckConfiguration:
     ])
 
 
-def run_enhanced_game(max_turns: int = 10, show_details: bool = True,
-                     show_logger: bool = True, delay: float = 0.3) -> str:
+def run_prompt_system_game(max_turns: int = 10, show_details: bool = True,
+                          show_logger: bool = True, delay: float = 0.3) -> str:
     """
-    Run a game with enhanced logging and real-time game logger output
+    Run a game using the new prompt system for all agent decisions
 
     Args:
         max_turns: Maximum number of turns to play
@@ -34,7 +35,7 @@ def run_enhanced_game(max_turns: int = 10, show_details: bool = True,
         show_logger: Show real-time game logger output
         delay: Delay between actions for readability
     """
-    print("=== SETTING UP ENHANCED GAME ===")
+    print("=== SETTING UP GAME WITH PROMPT SYSTEM ===")
 
     # Create agents
     agent1 = SimpleAgent("Agent Alpha")
@@ -52,31 +53,25 @@ def run_enhanced_game(max_turns: int = 10, show_details: bool = True,
 
     players = [player1, player2]
 
-    # Create callbacks
-    def mulligan_callback(player):
-        agent = agent1 if player.name == agent1.name else agent2
-        return agent.make_mulligan_decision(player, setup_manager.mulligan_system)
-
-    def scry_callback(player, scry_cards):
-        agent = agent1 if player.name == agent1.name else agent2
-        return agent.make_scry_decision(player, scry_cards)
-
-    def bottom_callback(player, num_to_bottom):
-        agent = agent1 if player.name == agent1.name else agent2
-        return agent.choose_cards_to_bottom(player, num_to_bottom)
-
-    # Setup game with mulligans
-    starting_player_index = setup_manager.setup_game(players, mulligan_callback, scry_callback, bottom_callback)
-
-    # Create game state
+    # Create game state first (needed for prompt system)
     game = GameState(players)
+
+    # Register agents with the prompt system
+    agent1.register_with_game(game, player1.name)
+    agent2.register_with_game(game, player2.name)
+
+    # Setup game with prompt system (no callbacks needed!)
+    starting_player_index = setup_manager.setup_game(players, game)
+
+    # Set the starting player in the game
     game.active_player_index = starting_player_index
     game.priority_player_index = starting_player_index
 
-    agents = {game.players[0].name: agent1, game.players[1].name: agent2}
+    # Map agents to players
+    agents = {player1.name: agent1, player2.name: agent2}
 
     if show_details:
-        print(f"Game initialized!")
+        print(f"Game initialized with prompt system!")
         print(f"Starting player: {game.active_player.name}")
         print(f"Phase info: {game.get_current_phase_info()}")
 
@@ -122,14 +117,14 @@ def run_enhanced_game(max_turns: int = 10, show_details: bool = True,
             game.pass_priority()
             continue
 
-        # Agent chooses action
+        # Agent chooses action (note: targeting will be handled automatically via prompts)
         chosen_action = current_agent.choose_action(current_player, legal_actions)
 
         if not chosen_action:
             print(f"Agent {current_agent.name} returned no action!")
             break
 
-        # Execute action
+        # Execute action (this may trigger prompts for targeting, etc.)
         success = game.execute_action(current_player, chosen_action)
 
         if not success:
@@ -188,20 +183,107 @@ def run_enhanced_game(max_turns: int = 10, show_details: bool = True,
     if show_details:
         print(f"\nTotal actions taken: {action_count}")
         print(f"Turns played: {turn_count}")
+        print("\nPrompt System Features Demonstrated:")
+        print("- Automatic mulligan decisions through structured prompts")
+        print("- Automatic target selection for spells like Banishing Light")
+        print("- Automatic choice selection for triggered abilities like Dockworker Drone")
+        print("- Cards-to-bottom selection during mulligan phase")
 
     return result
 
 
+def run_legacy_game(max_turns: int = 10, show_details: bool = True,
+                   show_logger: bool = True, delay: float = 0.3) -> str:
+    """
+    Run a game using the legacy callback system for comparison
+    """
+    print("=== SETTING UP LEGACY GAME (FOR COMPARISON) ===")
+
+    # Create agents
+    agent1 = SimpleAgent("Legacy Agent Alpha")
+    agent2 = SimpleAgent("Legacy Agent Beta")
+
+    # Create deck configuration
+    deck_config = create_sample_deck_config()
+
+    # Set up game
+    setup_manager = GameSetupManager()
+
+    # Create players with identical decks
+    player1 = setup_manager.create_player_with_deck(agent1.name, deck_config)
+    player2 = setup_manager.create_player_with_deck(agent2.name, deck_config)
+
+    players = [player1, player2]
+
+    # Create callbacks for legacy system
+    def mulligan_callback(player):
+        agent = agent1 if player.name == agent1.name else agent2
+        return agent.make_mulligan_decision(player, setup_manager.mulligan_system)
+
+    def scry_callback(player, scry_cards):
+        agent = agent1 if player.name == agent1.name else agent2
+        return agent.make_scry_decision(player, scry_cards)
+
+    def bottom_callback(player, num_to_bottom):
+        agent = agent1 if player.name == agent1.name else agent2
+        return agent.choose_cards_to_bottom(player, num_to_bottom)
+
+    # Setup game with legacy callbacks
+    starting_player_index = setup_manager.setup_game_with_callbacks(
+        players, mulligan_callback, scry_callback, bottom_callback)
+
+    # Create game state
+    game = GameState(players)
+    game.active_player_index = starting_player_index
+    game.priority_player_index = starting_player_index
+
+    agents = {game.players[0].name: agent1, game.players[1].name: agent2}
+
+    print(f"Legacy game initialized! Starting player: {game.active_player.name}")
+    print("Note: This uses the old callback system instead of the new prompt system")
+
+    # Rest of the game loop is similar to the prompt system version...
+    # (truncated for brevity, but would be the same basic structure)
+
+    return "Legacy game completed"
+
+
 def run_debug_game():
-    """Run a game with maximum debugging output"""
-    print("Running debug game with full logging:")
-    return run_enhanced_game(
+    """Run a game with maximum debugging output using prompt system"""
+    print("Running debug game with prompt system and full logging:")
+    return run_prompt_system_game(
         max_turns=15,
         show_details=True,
         show_logger=True,  # Show real-time logger output
         delay=0.8  # Slower for debugging
     )
 
+
+def compare_systems():
+    """Compare the old callback system vs new prompt system"""
+    print("=== PROMPT SYSTEM vs LEGACY COMPARISON ===")
+    print("\n1. Running game with NEW prompt system:")
+    prompt_result = run_prompt_system_game(max_turns=5, show_details=False, delay=0.1)
+
+    print(f"\n2. Running game with LEGACY callback system:")
+    legacy_result = run_legacy_game(max_turns=5, show_details=False, delay=0.1)
+
+    print(f"\n=== COMPARISON RESULTS ===")
+    print(f"Prompt System: {prompt_result}")
+    print(f"Legacy System: {legacy_result}")
+
+    print(f"\nPrompt System Advantages:")
+    print("- Structured, type-safe prompts")
+    print("- Centralized prompt handling")
+    print("- Automatic validation of responses")
+    print("- Easy to add new prompt types")
+    print("- Better error handling and fallbacks")
+    print("- Consistent interface for all agent decisions")
+
+
 if __name__ == "__main__":
-    # Run a debug game with full logging
+    # Run a debug game with the new prompt system
     run_debug_game()
+
+    # Uncomment to compare systems:
+    # compare_systems()

@@ -17,10 +17,10 @@ if TYPE_CHECKING:
 @dataclass
 class ScryChoice:
     """Represents a player's choice during scry"""
-    cards_to_bottom: List['Card']
-    cards_to_top: List['Card']  # In order from top to bottom
+    cards_to_bottom: List[Card]
+    cards_to_top: List[Card]  # In order from top to bottom
 
-    def validate(self, available_cards: List['Card']) -> bool:
+    def validate(self, available_cards: List[Card]) -> bool:
         """Validate that the choice is legal"""
         all_chosen = self.cards_to_bottom + self.cards_to_top
 
@@ -45,7 +45,7 @@ class ScrySystem:
     def __init__(self, deck_system: DeckSystem):
         self.deck_system = deck_system
 
-    def initiate_scry(self, player: 'Player', scry_amount: int) -> Optional[List['Card']]:
+    def initiate_scry(self, player: Player, scry_amount: int) -> Optional[List[Card]]:
         """
         Start a scry - look at top N cards from library
 
@@ -73,7 +73,7 @@ class ScrySystem:
 
         return cards_to_scry
 
-    def complete_scry(self, player: 'Player', scry_cards: List['Card'], choice: ScryChoice) -> bool:
+    def complete_scry(self, player: Player, scry_cards: List[Card], choice: ScryChoice) -> bool:
         """
         Complete a scry with the player's choice
 
@@ -101,7 +101,7 @@ class ScrySystem:
 
         return True
 
-    def perform_full_scry(self, player: 'Player', scry_amount: int, choice_callback) -> bool:
+    def perform_full_scry(self, player: Player, scry_amount: int, choice_callback) -> bool:
         """
         Perform a complete scry with external choice callback
 
@@ -131,7 +131,7 @@ class ScrySystem:
 
         return success
 
-    def get_scry_preview(self, player: 'Player', scry_amount: int) -> List['Card']:
+    def get_scry_preview(self, player: Player, scry_amount: int) -> List[Card]:
         """
         Preview what a scry would show without actually performing it
 
@@ -145,7 +145,7 @@ class ScrySystem:
         look_amount = min(scry_amount, len(player.library))
         return player.library[:look_amount]
 
-    def format_scry_choice_text(self, player: 'Player', scry_cards: List['Card']) -> str:
+    def format_scry_choice_text(self, player: Player, scry_cards: List[Card]) -> str:
         """
         Format text showing scry cards for external agent decision making
 
@@ -174,12 +174,12 @@ class ScrySystem:
 
 
 # Helper functions for common scry scenarios
-def create_default_scry_choice(scry_cards: List['Card']) -> ScryChoice:
+def create_default_scry_choice(scry_cards: List[Card]) -> ScryChoice:
     """Create a default scry choice (put all cards back on top in original order)"""
     return ScryChoice(cards_to_bottom=[], cards_to_top=scry_cards)
 
 
-def create_bottom_all_scry_choice(scry_cards: List['Card']) -> ScryChoice:
+def create_bottom_all_scry_choice(scry_cards: List[Card]) -> ScryChoice:
     """Create a scry choice that bottoms all cards"""
     return ScryChoice(cards_to_bottom=scry_cards, cards_to_top=[])
 

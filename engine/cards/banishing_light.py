@@ -1,6 +1,6 @@
 """
-Complete Banishing Light implementation with targeting and exile effects.
-Replace the existing banishing_light.py file with this implementation.
+Updated Banishing Light implementation with integrated targeting system.
+Now uses the prompt system for target selection.
 """
 
 from typing import List, Optional, TYPE_CHECKING
@@ -8,7 +8,7 @@ from typing import List, Optional, TYPE_CHECKING
 from engine.core.card_system import Card, exile_tracker
 from engine.core.core_types import GameEvent, Zone
 from engine.core.display_system import game_logger
-from engine.core.targeting_system import targeting_system
+from engine.core.targeting_system import targeting_system, TargetingError
 
 if TYPE_CHECKING:
     from engine.core.targeting_system import TargetFilter
@@ -38,9 +38,30 @@ class BanishingLight(Card):
         """This spell targets nonland permanents opponents control"""
         return targeting_system.create_nonland_permanent_opponent_filter()
 
-    def resolve_spell(self, game_state: 'GameState', caster: 'Player', targets: List['Card']) -> bool:
-        """Resolve Banishing Light - exile target, then enter battlefield"""
+    def requires_targets(self) -> bool:
+        """Banishing Light requires a target"""
+        return True
+
+    def resolve_spell(self, game_state: 'GameState', caster: 'Player', targets: List['Card'] = None) -> bool:
+        """
+        Resolve Banishing Light - request target if needed, then exile and enter battlefield
+
+        Note: In the current system, targets should be provided by the spell system.
+        If no targets are provided, this method will request them.
+        """
         try:
+            # If no targets provided, request them using targeting system
+            if not targets:
+                try:
+                    target_filter = self.get_target_filter()
+                    targets = [targeting_system.request_single_target(game_state, caster, target_filter, self.name)]
+                except TargetingError as e:
+                    game_logger.log_event(f"{self.name} cannot resolve: {e}")
+                    # Put in graveyard if no valid targets
+                    caster.graveyard.append(self)
+                    self.zone = Zone.GRAVEYARD
+                    return False
+
             # Banishing Light enters the battlefield first
             caster.battlefield.append(self)
             self.zone = Zone.BATTLEFIELD
@@ -49,7 +70,7 @@ class BanishingLight(Card):
             game_logger.log_event(f"{self.name} enters the battlefield")
 
             # Then trigger its ETB ability
-            if targets:
+            if targets and len(targets) > 0:
                 target = targets[0]  # Should be exactly one target
 
                 # Exile the target
@@ -91,3 +112,7 @@ class BanishingLight(Card):
         """Banishing Light's behavior is handled in resolve_spell"""
         # No abilities to set up - this is a spell with a resolution effect
         pass
+
+    @classmethod
+    def get_card_name(cls) -> str:
+        return "Banishing Light"

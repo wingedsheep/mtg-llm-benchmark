@@ -20,7 +20,7 @@ class GameStateFormatter:
     def __init__(self):
         pass
 
-    def format_game_state(self, game_state: 'GameState', perspective_player: 'Player') -> str:
+    def format_game_state(self, game_state: GameState, perspective_player: Player) -> str:
         """Get complete game state from player's perspective"""
         sections = []
 
@@ -51,7 +51,7 @@ class GameStateFormatter:
         non_empty_sections = [section for section in sections if section.strip()]
         return "\n\n".join(non_empty_sections)
 
-    def _format_header(self, game_state: 'GameState') -> str:
+    def _format_header(self, game_state: GameState) -> str:
         """Format game header information"""
         lines = []
         lines.append(f"=== TURN {game_state.turn_number} - {game_state.phase.value.upper()} PHASE ===")
@@ -59,7 +59,7 @@ class GameStateFormatter:
         lines.append(f"Priority: {game_state.priority_player.name}")
         return "\n".join(lines)
 
-    def _format_player_status(self, player: 'Player') -> str:
+    def _format_player_status(self, player: Player) -> str:
         """Format player's basic status"""
         lines = []
         lines.append(f"YOUR STATUS ({player.name}):")
@@ -71,7 +71,7 @@ class GameStateFormatter:
 
         return "\n".join(lines)
 
-    def _format_opponent_status(self, opponent: 'Player') -> str:
+    def _format_opponent_status(self, opponent: Player) -> str:
         """Format opponent's visible status"""
         lines = []
         lines.append(f"OPPONENT STATUS ({opponent.name}):")
@@ -79,7 +79,7 @@ class GameStateFormatter:
         lines.append(f"Hand: {len(opponent.hand)} cards")
         return "\n".join(lines)
 
-    def _format_hand(self, player: 'Player') -> str:
+    def _format_hand(self, player: Player) -> str:
         """Format player's hand"""
         lines = []
         lines.append(f"HAND ({len(player.hand)} cards):")
@@ -93,7 +93,7 @@ class GameStateFormatter:
 
         return "\n".join(lines)
 
-    def _format_battlefield(self, player: 'Player', title: str) -> str:
+    def _format_battlefield(self, player: Player, title: str) -> str:
         """Format a player's battlefield"""
         lines = []
         lines.append(f"{title}:")
@@ -107,7 +107,7 @@ class GameStateFormatter:
 
         return "\n".join(lines)
 
-    def _format_stack(self, game_state: 'GameState') -> str:
+    def _format_stack(self, game_state: GameState) -> str:
         """Format the stack"""
         lines = []
         lines.append("STACK (top to bottom):")
@@ -177,7 +177,7 @@ class GameStateFormatter:
 
         return status
 
-    def _get_opponent(self, game_state: 'GameState', player: 'Player') -> 'Player':
+    def _get_opponent(self, game_state: GameState, player: Player) -> Player:
         """Get the opponent of the given player"""
         for p in game_state.players:
             if p != player:

@@ -4,15 +4,15 @@ Contains the base Card class and card-related functionality.
 """
 
 import uuid
-from typing import List, Dict, Optional, TYPE_CHECKING
+from typing import List, Dict, Optional
+
+from cards import Card
 
 from engine.core.core_types import Zone, CardType
+from engine.core.game_state import GameState
 from engine.core.mana_system import ManaCost
-
-if TYPE_CHECKING:
-    from engine.core.player_system import Player
-    from engine.core.targeting_system import TargetFilter
-    from engine.core.game_state import GameState
+from engine.core.player_system import Player
+from engine.core.targeting_system import TargetFilter
 
 
 class Card:
@@ -33,8 +33,8 @@ class Card:
 
         # Game state
         self.zone = Zone.LIBRARY
-        self.owner: Optional['Player'] = None
-        self.controller: Optional['Player'] = None
+        self.owner: Optional[Player] = None
+        self.controller: Optional[Player] = None
         self.id = str(uuid.uuid4())  # Unique identifier
 
         # Permanent state
@@ -155,7 +155,7 @@ class Card:
         self.is_blocking = False
         self.summoning_sick = True
 
-    def copy(self) -> 'Card':
+    def copy(self) -> Card:
         """Create a copy of this card with a new ID"""
         new_card = Card(
             name=self.name,
@@ -171,7 +171,7 @@ class Card:
 
     # === NEW TARGETING AND SPELL RESOLUTION METHODS ===
 
-    def get_target_filter(self) -> Optional['TargetFilter']:
+    def get_target_filter(self) -> Optional[TargetFilter]:
         """Override in subclasses to define targeting requirements"""
         return None
 
@@ -179,7 +179,7 @@ class Card:
         """Check if this spell requires targets to be cast"""
         return self.get_target_filter() is not None
 
-    def resolve_spell(self, game_state: 'GameState', caster: 'Player', targets: List['Card']) -> bool:
+    def resolve_spell(self, game_state: GameState, caster: Player, targets: List[Card]) -> bool:
         """Override in subclasses to define spell resolution effects"""
         # Default: just put in graveyard
         caster.graveyard.append(self)
@@ -217,7 +217,7 @@ class ExileTracker:
     def __init__(self):
         self.exiled_by_source = {}  # source_card_id -> list of exiled cards
 
-    def exile_card(self, source_card: 'Card', target_card: 'Card'):
+    def exile_card(self, source_card: Card, target_card: Card):
         """Exile a card, tracking the source"""
 
         if source_card.id not in self.exiled_by_source:
@@ -237,7 +237,7 @@ class ExileTracker:
         target_card.owner.exile.append(target_card)
         target_card.zone = Zone.EXILE
 
-    def return_exiled_cards(self, source_card: 'Card'):
+    def return_exiled_cards(self, source_card: Card):
         """Return all cards exiled by this source"""
 
         if source_card.id not in self.exiled_by_source:

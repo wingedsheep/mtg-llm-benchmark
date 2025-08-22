@@ -18,7 +18,7 @@ class Effect:
         self.description = description
         self.effect_func = effect_func
 
-    def execute(self, game_state: 'GameState', source: 'Card', **kwargs) -> Any:
+    def execute(self, game_state: GameState, source: Card, **kwargs) -> Any:
         """Execute this effect"""
         return self.effect_func(game_state, source, **kwargs)
 
@@ -33,7 +33,7 @@ class Ability:
         self.effect = effect
         self.is_usable = True
 
-    def can_activate(self, source: 'Card') -> bool:
+    def can_activate(self, source: Card) -> bool:
         """Check if this ability can be activated"""
         if self.ability_type != "activated":
             return False
@@ -48,7 +48,7 @@ class Ability:
         # Add more cost checking logic here as needed
         return True
 
-    def activate(self, game_state: 'GameState', source: 'Card'):
+    def activate(self, game_state: GameState, source: Card):
         """Activate this ability"""
         if not self.can_activate(source):
             return False
@@ -69,20 +69,20 @@ class TriggerManager:
     def __init__(self):
         self.pending_triggers = []
 
-    def check_triggers(self, event: GameEvent, game_state: 'GameState'):
+    def check_triggers(self, event: GameEvent, game_state: GameState):
         """Check all permanents for triggered abilities that match this event"""
         for player in game_state.players:
             for card in player.battlefield:
                 self._check_card_triggers(card, event, game_state)
 
-    def _check_card_triggers(self, card: 'Card', event: GameEvent, game_state: 'GameState'):
+    def _check_card_triggers(self, card: Card, event: GameEvent, game_state: GameState):
         """Check if a specific card has triggers for this event"""
         for ability in card.abilities:
             if hasattr(ability, 'ability_type') and ability.ability_type == "triggered":
                 if self._trigger_matches_event(ability, event, card):
                     self.pending_triggers.append((ability, card))
 
-    def _trigger_matches_event(self, ability: Ability, event: GameEvent, source: 'Card') -> bool:
+    def _trigger_matches_event(self, ability: Ability, event: GameEvent, source: Card) -> bool:
         """Check if a triggered ability matches the given event"""
         if not ability.trigger_condition:
             return False
@@ -99,7 +99,7 @@ class TriggerManager:
         # Add more trigger conditions as needed
         return False
 
-    def resolve_triggers(self, game_state: 'GameState'):
+    def resolve_triggers(self, game_state: GameState):
         """Resolve all pending triggers"""
         while self.pending_triggers:
             ability, source = self.pending_triggers.pop(0)

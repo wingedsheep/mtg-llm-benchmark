@@ -17,6 +17,7 @@ class Zone(Enum):
     EXILE = "exile"
     STACK = "stack"
 
+
 class Phase(Enum):
     """Game phases and steps"""
     UNTAP = "untap"
@@ -32,6 +33,7 @@ class Phase(Enum):
     END = "end"
     CLEANUP = "cleanup"
 
+
 class CardType(Enum):
     """Magic card types"""
     CREATURE = "creature"
@@ -42,6 +44,7 @@ class CardType(Enum):
     PLANESWALKER = "planeswalker"
     LAND = "land"
 
+
 class Color(Enum):
     """Magic colors"""
     WHITE = "white"
@@ -50,6 +53,7 @@ class Color(Enum):
     RED = "red"
     GREEN = "green"
     COLORLESS = "colorless"
+
 
 @dataclass
 class GameEvent:
@@ -61,11 +65,13 @@ class GameEvent:
         self.event_type = event_type
         self.data = kwargs
 
+
 @dataclass
 class Counter:
     """Represents counters on permanents"""
     name: str
     amount: int = 1
+
 
 # Color mapping for mana symbols
 MANA_SYMBOL_TO_COLOR = {

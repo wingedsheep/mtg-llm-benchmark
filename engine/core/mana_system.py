@@ -6,6 +6,7 @@ Handles mana costs, mana pools, and mana-related calculations.
 from dataclasses import dataclass
 from typing import Dict
 
+
 @dataclass
 class ManaCost:
     """Represents mana cost like {1}{W}{U}"""
@@ -87,6 +88,7 @@ class ManaCost:
             parts.extend(["{C}"] * self.colorless)
 
         return ''.join(parts)
+
 
 class ManaPool:
     """Manages a player's mana pool"""
